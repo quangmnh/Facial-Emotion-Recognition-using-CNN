@@ -1,9 +1,15 @@
 from imgaug import augmenters as iaa
 import cv2
+import numpy as np
 import glob2
 
-face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+# Loading DNN model
+modelFile = 'res10_300x300_ssd_iter_140000.caffemodel'
+configFile = 'deploy.prototxt.txt'
+net = cv2.dnn.readNetFromCaffe(configFile, modelFile)
+conf_threshold = 0.5
 
+# Model for generating augmentation data
 def generate(img):
 
     seq_0 = iaa.Sequential([
@@ -91,6 +97,7 @@ def generate(img):
     ])
 
     image_aug = [
+        img,
         seq_0(image=img),
         seq_1(image=img),
         seq_2(image=img),
@@ -112,36 +119,65 @@ def generate(img):
 
     return image_aug
 
-samples = len(glob2.glob('dataset_new/images/sad/*')) + 1
+def run_aug():
+    samples = len(glob2.glob('dataset_new/validation/' + emotion + '_filter/*')) + 1
+    cnt = 0
+    for s in range(1, samples):
+        print('Loading sample', s, '/', samples)
 
-cnt = 0
-for i in range(1, samples):
-    image = cv2.imread('dataset_new/images/sad/' + str(i) + '.jpg')
-    if image is None: continue
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+        image = cv2.imread('dataset_new/validation/' + emotion + '_filter/(' + str(s) + ').jpg')
+        if image is None:
+            continue
 
-    if faces is not None:
-        for x, y, w, h in faces:
-            cv2.rectangle(image, (x - 10, y - 10), (x + w + 10, y + h + 10), (0, 255, 0), 2)
-            gray_roi = gray[y:y+h, x:x+w]
-            gray_roi = cv2.resize(gray_roi, (48, 48), interpolation=cv2.INTER_AREA)
+        img_aug = generate(image)
 
-            img_aug = generate(gray_roi)
+        for img in img_aug:
+            cv2.imwrite('dataset_new/validation/' + emotion + '/' + str(cnt) + '.jpg', img)
+            cnt += 1
 
-            for img in img_aug:
-                # cv2.imshow('test', img)
-                cv2.imwrite('dataset_new/validation/sad/' + str(cnt) + '.jpg', img)
+def run_filter():
+    # Loading number of samples
+    samples = len(glob2.glob('dataset_new/images/' + emotion + '/*')) + 1
+
+    cnt = 0
+    for s in range(1, samples):
+
+        print('Loading sample', s, '/', samples)
+
+        image = cv2.imread('dataset_new/images/' + emotion + '/' + str(s) + '.jpg')
+
+        if image is None:
+            continue
+
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+        (height, width) = image.shape[:2]
+        blob = cv2.dnn.blobFromImage(cv2.resize(image, (300, 300)), 1.0, (300, 300), (104., 177., 123.))
+        net.setInput(blob)
+        detections = net.forward()
+
+        for i in range(0, detections.shape[2]):
+            confidence = detections[0, 0, i, 2]
+            if confidence > conf_threshold:
+                box = detections[0, 0, i, 3:7] * np.array([width, height, width, height])
+                (x, y, w, h) = box.astype('int')
+                gray_roi = gray[y:h, x:w]
+
+                if gray_roi.shape[0] == 0 or gray_roi.shape[1] == 0:
+                    continue
+                else:
+                    gray_roi = cv2.resize(gray_roi, (48, 48), interpolation=cv2.INTER_AREA)
+
+                cv2.imwrite('dataset_new/validation/' + emotion + '_filter/' + str(cnt) + '.jpg', gray_roi)
                 cnt += 1
-                # cv2.waitKey(0)
 
-    else:
-        print('No face')
+# Emotion file
+emotion = 'surprise'
 
-# for i in range(0, samples):
-#     image = cv2.imread('dataset_new/images/happy_gen/' + str(i) + '.png')
-#     img_aug = generate(image)
-#
-#     for img in img_aug:
-#         cv2.imwrite('dataset_new/validation/happy/' + str(cnt) + '.png', img)
-#         cnt += 1
+# Uncomment this function if you need to pre-process input data
+run_filter()
+
+# Uncomment this function if you need to run augmentation data
+# run_aug()
+
+
