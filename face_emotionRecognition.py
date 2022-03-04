@@ -4,6 +4,34 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import *
 import numpy as np
 
+def gstreamer_pipeline(
+    sensor_id=0,
+    capture_width=1920,
+    capture_height=1080,
+    display_width=960,
+    display_height=540,
+    framerate=30,
+    flip_method=0,
+):
+    return (
+        "nvarguscamerasrc sensor-id=%d !"
+        "video/x-raw(memory:NVMM), width=(int)%d, height=(int)%d, framerate=(fraction)%d/1 ! "
+        "nvvidconv flip-method=%d ! "
+        "video/x-raw, width=(int)%d, height=(int)%d, format=(string)BGRx ! "
+        "videoconvert ! "
+        "video/x-raw, format=(string)BGR ! appsink"
+        % (
+            sensor_id,
+            capture_width,
+            capture_height,
+            framerate,
+            flip_method,
+            display_width,
+            display_height,
+        )
+    )
+
+
 # Load model
 model = load_model('facial_emotion_recognition_new_dataset.h5')
 
@@ -21,7 +49,7 @@ class_labels = ['Angry', 'Happy', 'Neutral', 'Sad', 'Surprise']
 # VideoCapture(i),
 # i = 0: Using embedded laptop/PC webcam
 # i = 1: Using external webcam
-capture = cv2.VideoCapture(1)
+capture = cv2.VideoCapture(gstreamer_pipeline(flip_method=0), cv2.CAP_GSTREAMER)
 
 while True:
     _, frame = capture.read()
